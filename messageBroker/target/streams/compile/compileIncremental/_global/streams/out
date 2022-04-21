@@ -1,0 +1,15 @@
+[debug] [zinc] IncrementalCompile -----------
+[debug] IncrementalCompile.incrementalCompile
+[debug] previous = Stamps for: 0 products, 0 sources, 0 libraries
+[debug] current source = Set(${BASE}/project/src/main/scala/sender/SenderManager.scala, ${BASE}/project/src/main/scala/sender/Sender.scala, ${BASE}/project/src/main/scala/main/Main.scala, ${BASE}/project/src/main/scala/sender/SenderScaler.scala, ${BASE}/project/src/main/scala/listener/Listener.scala, ${BASE}/project/src/main/scala/listener/ListenerSupervisor.scala, ${BASE}/project/src/main/scala/sender/SenderSupervisor.scala)
+[debug] > initialChanges = InitialChanges(Changes(added = Set(${BASE}/project/src/main/scala/listener/Listener.scala, ${BASE}/project/src/main/scala/sender/Sender.scala, ${BASE}/project/src/main/scala/sender/SenderSupervisor.scala, ${BASE}/project/src/main/scala/sender/SenderManager.scala, ${BASE}/project/src/main/scala/sender/SenderScaler.scala, ${BASE}/project/src/main/scala/main/Main.scala, ${BASE}/project/src/main/scala/listener/ListenerSupervisor.scala), removed = Set(), changed = Set(), unmodified = ...),Set(),Set(),API Changes: Set())
+[debug] Full compilation, no sources in previous analysis.
+[debug] all 7 sources are invalidated
+[debug] Initial set of included nodes: 
+[debug] Recompiling all sources: number of invalidated sources > 50.0% of all sources
+[debug] compilation cycle 1
+[info] compiling 7 Scala sources to F:\USERS\Polina\Рабочий стол\UTM\3Y\PTR\Lab3\project\target\scala-2.13\sbt-1.0\classes ...
+[debug] Getting org.scala-sbt:compiler-bridge_2.13:1.5.7:compile for Scala 2.13.0
+[error] bad option: '-Wconf:cat=unused-nowarn:s'
+[debug] Compilation failed (CompilerInterface)
+[error] (Compile / compileIncremental) Compilation failed
