@@ -7,13 +7,13 @@ import sender.{SenderManager, SenderScaler, SenderSupervisor}
 
 object Overlord {
 
-  case object CreateListSup
+  case class CreateListSup()
 
-  case object CreateSendSup
+  case class CreateSendSup()
 
-  case object CreateSendScaler
+  case class CreateSendScaler()
 
-  case object CreateSendMan
+  case class CreateSendMan()
 
 }
 
