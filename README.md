@@ -12,12 +12,46 @@
 
 ## Actors:
 
-1. MainSupervisor - initializes all other actors and supervises them.
-2. ListenerSupervisor - initializes both `Listeners` for both streams and supervises them.
-3. Listener - listens for the SSE stream from corresponding endpoint of Producer Server
-4. SenderSupervisor - initializes `Senders` and supervises them.
-5. SenderManager - first actor to interact with client (consumers), after communicates with `SenderSupervisor` (or `SenderScaler`) to create senders for connection, delegates subscriptions and much more.
-6. SenderScaler - W.I.P. of its concept, maybe will be completely useless in the future.
+## 1. MainSupervisor - initializes all other actors and supervises them.
+### Sends
+- Two messages `CreateListener` to `ListenerSupervisor`
+### Receives
+- Messages `CreateListenerSupervisor`, `CreateSenderManager`, `CreateSenderSupervisor`, `CreateSenderScaler` from initial function
+
+
+## 2. ListenerSupervisor - initializes both `Listeners` for both streams and supervises them.
+### Receives
+- `CreateListener` from `MainSupervisor`
+
+## 3. Listener - listens for the SSE stream from corresponding endpoint of Producer Server
+### Sends and receives
+- `Tweet` message from itself to process messages received from SSE stream
+### Sends
+- `Message` message to the corresponding `Topic worker`
+
+## 4. SenderSupervisor - initializes `Senders` and supervises them.
+### Receives
+- `CreateSender` from `SenderManager`
+
+## 5. SenderManager - first actor to interact with client (consumers), after communicates with `SenderSupervisor` (or `SenderScaler`) to create senders for connection, delegates subscriptions and much more.
+### Sends
+- `CreateSender` to `SenderSupervisor`
+### Receives
+- `Connect` message from the Client Side and creates `Sender worker`
+
+## 6. Sender - the actor being initialized by SenderSupervisor and has TCP connection with the client side, receives and sends message from/to it
+### Sends
+- `Topics` message, which contains list of all available topics for current moment
+- `Message` message with topic and text to the client side
+### Receives
+- `Subscribe` with list of topics client side want to subscribe
+
+## 7. Topic worker
+### Sends
+- `Message` message to `Sender` with topic and text
+### Receives
+- `Message` from `Listener` with topic and text
+- `Subscribe` (to topic) from `Sender`
 
 ## Diagrams:
 
