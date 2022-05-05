@@ -46,7 +46,7 @@
 ### Receives
 - `Subscribe` with list of topics client side want to subscribe
 
-## 7. Topic worker
+## 7. Topic worker - actor, which saves all corresponding topic messages and sends it to senders if they are subscribed to it.
 ### Sends
 - `Message` message to `Sender` with topic and text
 ### Receives
