@@ -1,8 +1,6 @@
 package main
 
 import akka.actor.{ActorRef, ActorSystem, Props}
-import akka.stream.ActorMaterializer
-import listener.Listener.Message
 
 import Overlord._
 
@@ -12,25 +10,19 @@ object Main {
 
   implicit val system: ActorSystem = ActorSystem("mainSystem")
 
-  var messageBuffers: mutable.Map[String, Array[Message]] = mutable.Map[String, Array[Message]]()
+  var topicPool: mutable.Map[String, ActorRef] = mutable.Map[String, ActorRef]()
 
-  var topicBuffer = Set.empty[String]
+  var topicSup : Option[ActorRef] = None
 
   var overlord : Option[ActorRef] = None
 
   def main(args: Array[String]): Unit = {
 
-    implicit val mat: ActorMaterializer = ActorMaterializer()
-
     overlord = Option(system.actorOf(Props(classOf[Overlord]), "overlord"))
 
-    overlord.get ! CreateListSup
+    overlord.get ! CreateTopicSup
 
-    overlord.get ! CreateSendMan
-
-    overlord.get ! CreateSendSup
-
-    overlord.get ! CreateSendScaler
+    overlord.get ! CreateServer
 
   }
 }

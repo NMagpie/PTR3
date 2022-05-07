@@ -2,8 +2,8 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/project.iml" filepath="$PROJECT_DIR$/.idea/modules/project.iml" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/project-build.iml" filepath="$PROJECT_DIR$/.idea/modules/project-build.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/messageBroker.iml" filepath="$PROJECT_DIR$/.idea/modules/messageBroker.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/messageBroker-build.iml" filepath="$PROJECT_DIR$/.idea/modules/messageBroker-build.iml" />
     </modules>
   </component>
 </project>
