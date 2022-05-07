@@ -3,17 +3,19 @@
 *~
 *.class
 *.tasty
-messageBroker/target/
-messageBroker/logs/
+
 .bloop
-messageBroker/.bsp
 .dotty-ide-artifact
 .dotty-ide.json
+*.csv
+*.dat
+
+messageBroker/target/
+messageBroker/logs/
+messageBroker/.bsp
 messageBroker/.idea
 messageBroker/.metals
 messageBroker/.vscode
-*.csv
-*.dat
 
 client/target/
 client/logs/
