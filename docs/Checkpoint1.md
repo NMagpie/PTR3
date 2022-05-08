@@ -66,3 +66,7 @@
 ### Supervisor Tree
 
 ![suptree](docs/images/suptree.png)
+
+### TCP/IP Connections
+
+![tcp](docs/images/tcp.png)
