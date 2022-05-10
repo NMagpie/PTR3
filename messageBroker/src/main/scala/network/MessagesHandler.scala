@@ -1,10 +1,11 @@
 package network
 
-import akka.actor.{Actor, ActorRef, Cancellable}
+import akka.actor.{ActorRef, Cancellable}
 import akka.io.Tcp
+import akka.persistence.PersistentActor
 import akka.util.ByteString
 import main.Main.{topicPool, topicSup}
-import network.MessagesHandler.{GiveTopics, SubscribeToAll}
+import network.MessagesHandler.{ConnectionType, GiveTopics, SubscribeToAll, TopicsSelected}
 import org.json4s.{Formats, NoTypeHints, jackson}
 import org.json4s.jackson.Serialization
 import org.json4s.native.JsonMethods.parse
@@ -21,12 +22,19 @@ object MessagesHandler {
   case class SubscribeToAll()
 
   case class GiveTopics()
+
+  case class ConnectionType(connType: ByteString)
+
+  case class TopicsSelected(topics: ByteString)
+
 }
 
-class MessagesHandler(connection: ActorRef) extends Actor {
+class MessagesHandler(connection: ActorRef) extends PersistentActor {
   import Tcp._
   import main.Main.system
   import MessagesHandler.Message
+
+  override def persistenceId: String = self.path.name
 
   implicit val executor: ExecutionContextExecutor = system.dispatcher
 
@@ -84,14 +92,10 @@ class MessagesHandler(connection: ActorRef) extends Actor {
       connection ! Write(ByteString.fromString(jsonTopics))
 
     case Received(data) =>
-      val jsonTopics = parse(data.utf8String)
-      val topics = (jsonTopics \ "topics").extract[Set[String]]
-
-      cancelTimeout()
-
-      self ! SubscribeToAll
-
-      context.become(consumerHandler(topics))
+      persist(TopicsSelected(data)) { _ =>
+        deleteMessages(1)
+        selectTopics(data)
+      }
 
     case Closed =>
       context.stop(self)
@@ -121,6 +125,10 @@ class MessagesHandler(connection: ActorRef) extends Actor {
 
   var timeOutTask : Option[Cancellable] = None
 
+  def scheduleMessage(): Unit = {
+
+  }
+
   def scheduleTimeout(): Unit = {
     timeOutTask = Option(system.scheduler.scheduleOnce(5 seconds) {
       connection ! ConfirmedClose
@@ -135,29 +143,13 @@ class MessagesHandler(connection: ActorRef) extends Actor {
     }
   }
 
-  def receive: Receive = {
+  override def receiveRecover: Receive = {
 
-    case Received(data) =>
+    case ConnectionType(data) =>
+      connType(data)
 
-      val connType = parse(data.utf8String)
-
-      (connType \ "connectionType").extract[String] match {
-        case "Producer" =>
-          cancelTimeout()
-
-          context.become(producerHandler)
-
-        case "Consumer" =>
-          cancelTimeout()
-
-          scheduleTimeout()
-
-          self ! GiveTopics
-
-          context.become(selectingTopics)
-
-        case _ =>
-      }
+    case TopicsSelected(data) =>
+      selectTopics(data)
 
     case Connected(_, _) =>
       scheduleTimeout()
@@ -177,4 +169,62 @@ class MessagesHandler(connection: ActorRef) extends Actor {
     case ErrorClosed(_) =>
       context.stop(self)
   }
+
+  override def receiveCommand: Receive = {
+
+    case Received(data) =>
+      persist(ConnectionType(data)) ( _ => connType(data))
+
+    case Connected(_, _) =>
+      scheduleTimeout()
+
+    case Closed =>
+      context.stop(self)
+
+    case Aborted =>
+      context.stop(self)
+
+    case ConfirmedClosed =>
+      context.stop(self)
+
+    case PeerClosed =>
+      context.stop(self)
+
+    case ErrorClosed(_) =>
+      context.stop(self)
+  }
+
+  def selectTopics(data: ByteString): Unit = {
+    val jsonTopics = parse(data.utf8String)
+    val topics = (jsonTopics \ "topics").extract[Set[String]]
+
+    cancelTimeout()
+
+    self ! SubscribeToAll
+
+    context.become(consumerHandler(topics))
+  }
+
+  def connType(data: ByteString): Unit = {
+      val connType = parse(data.utf8String)
+
+      (connType \ "connectionType").extract[String] match {
+        case "Producer" =>
+          cancelTimeout()
+
+          context.become(producerHandler)
+
+        case "Consumer" =>
+          cancelTimeout()
+
+          scheduleTimeout()
+
+          self ! GiveTopics
+
+          context.become(selectingTopics)
+
+        case _ =>
+      }
+  }
+
 }

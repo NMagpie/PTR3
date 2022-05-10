@@ -26,13 +26,13 @@ class ListenerSupervisor extends Actor {
         case 1 =>
           if (firstListener.isEmpty) {
             println("FirstListener was created")
-            firstListener = Option(system.actorOf(Props(classOf[Listener], number), "firstListener"))
+            firstListener = Option(context.actorOf(Props(classOf[Listener], number), "firstListener"))
           }
 
         case 2 =>
           if (secondListener.isEmpty) {
             println("SecondListener was created")
-            secondListener = Option(system.actorOf(Props(classOf[Listener], number), "secondListener"))
+            secondListener = Option(context.actorOf(Props(classOf[Listener], number), "secondListener"))
           }
       }
   }

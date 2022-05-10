@@ -32,6 +32,7 @@ class TcpClient(remote: InetSocketAddress, listener: ActorRef, id: Int) extends 
   var connection: Option[ActorRef] = None
 
   def selectingTopics: Receive = {
+
     case Received(data) =>
       val jsonTopics = parse(data.utf8String)
       val topics = (jsonTopics \ "topics").extract[Set[String]]
@@ -39,6 +40,8 @@ class TcpClient(remote: InetSocketAddress, listener: ActorRef, id: Int) extends 
         if (r.nextInt(100) > 90) {
           selectedTopics += topic
         }
+
+      //selectedTopics += "de"
 
       println(s"Client${this.id}: Selected topics: $selectedTopics")
 
