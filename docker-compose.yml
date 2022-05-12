@@ -1,0 +1,33 @@
+services:
+  mongo:
+    image: mongo
+    ports:
+      - "27017:27017"
+  rtpserver:
+    image: alexburlacu/rtp-server:faf18x
+    ports:
+      - "4000:4000"
+    depends_on:
+      - "mongo"
+  messagebroker:
+    image: messagebroker:0.1.0-SNAPSHOT
+    ports:
+      - "8000:8000"
+    depends_on:
+      - "rtpserver"
+    command:
+      - '/bin/sh'
+      - '-c'
+      - '/bin/sleep 10'
+  producer:
+    image: producer:0.1.0-SNAPSHOT
+    depends_on:
+      - "messagebroker"
+    command:
+      - '/bin/sh'
+      - '-c'
+      - '/bin/sleep 30'
+  consumer:
+    image: client:0.1.0-SNAPSHOT
+    depends_on:
+      - "producer"

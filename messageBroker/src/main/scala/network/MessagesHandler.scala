@@ -1,11 +1,11 @@
 package network
 
-import akka.actor.{ActorRef, Cancellable}
+import akka.actor.{ActorRef, Cancellable, Kill}
 import akka.io.Tcp
-import akka.persistence.PersistentActor
+import akka.persistence.{DeleteMessagesSuccess, DeleteSnapshotSuccess, PersistentActor, SnapshotOffer, SnapshotSelectionCriteria}
 import akka.util.ByteString
 import main.Main.{topicPool, topicSup}
-import network.MessagesHandler.{ConnectionType, GiveTopics, SubscribeToAll, TopicsSelected}
+import network.MessagesHandler.{Acknowledgement, ConnectionType, GiveTopics, SubscribeToAll, TopicsSelected}
 import org.json4s.{Formats, NoTypeHints, jackson}
 import org.json4s.jackson.Serialization
 import org.json4s.native.JsonMethods.parse
@@ -15,6 +15,15 @@ import topic.TopicSupervisor.CreateTopic
 import scala.concurrent.ExecutionContextExecutor
 import scala.concurrent.duration.DurationInt
 import scala.language.postfixOps
+
+/*
+
+  Message Handler - the most complex part of the Message Broker. It can have behavior of two types - Producer or Consumer.
+  Also, can persist its state (which type of connection he has), which topics he is subscribed to and also messages he
+  sends (if it is a Consumer). If message was not acknowledged in 100 milliseconds, takes place its resending,
+  otherwise message is no longer being persisted. If last 100 tries of resending were failed - actor just closes connection.
+
+ */
 
 object MessagesHandler {
   case class Message(id: Int, message: String, topic: String)
@@ -27,6 +36,8 @@ object MessagesHandler {
 
   case class TopicsSelected(topics: ByteString)
 
+  case class Acknowledgement(id: Int)
+
 }
 
 class MessagesHandler(connection: ActorRef) extends PersistentActor {
@@ -35,6 +46,14 @@ class MessagesHandler(connection: ActorRef) extends PersistentActor {
   import MessagesHandler.Message
 
   override def persistenceId: String = self.path.name
+
+//    override def preStart(): Unit = {
+//      super.preStart()
+//      if (self.path.name == "handler-2")
+//      context.system.scheduler.scheduleOnce(2 minutes) {
+//        self ! Kill
+//      }
+//    }
 
   implicit val executor: ExecutionContextExecutor = system.dispatcher
 
@@ -50,20 +69,44 @@ class MessagesHandler(connection: ActorRef) extends PersistentActor {
         topicSup.get ! CreateTopic(message)
       }
 
+    case Connected =>
+
     case PeerClosed => context.stop(self)
 
     case ErrorClosed(_) => context.stop(self)
   }
 
   def consumerHandler(topics : Set[String]): Receive = {
+
     case a @ Message(_, _, _) =>
-      connection ! Write(ByteString.fromString(Serialization.write(a)))
+        connection ! Write(ByteString.fromString(Serialization.write(a)))
+        createResend(a)
 
     case SubscribeToAll =>
       for (topic <- topics) {
         if (topicPool.contains(topic))
           topicPool(topic) ! Subscribe(self)
       }
+
+    case Received(data) =>
+      val ack = parse(data.utf8String).extract[Acknowledgement]
+
+      if (acks.contains(ack.id)) {
+        resendTries = 0
+        acks(ack.id).cancel()
+        acks -= ack.id
+        ackMes -= ack.id
+        deleteSnapshots(SnapshotSelectionCriteria())
+        saveSnapshot(ackMes)
+      }
+
+      println(s"Ack[${ack.id}]")
+
+    case DeleteMessagesSuccess =>
+
+    case DeleteSnapshotSuccess =>
+
+    case Connected =>
 
     case Closed =>
       endConsumer(topics)
@@ -80,8 +123,6 @@ class MessagesHandler(connection: ActorRef) extends PersistentActor {
     case ErrorClosed(_) =>
       endConsumer(topics)
 
-    case Received(_) =>
-
     case a @ _ => println(a)
   }
 
@@ -96,6 +137,8 @@ class MessagesHandler(connection: ActorRef) extends PersistentActor {
         deleteMessages(1)
         selectTopics(data)
       }
+
+    case Connected =>
 
     case Closed =>
       context.stop(self)
@@ -119,7 +162,11 @@ class MessagesHandler(connection: ActorRef) extends PersistentActor {
     for (topic <- topics) {
       topicPool(topic) ! Unsubscribe(self)
     }
+    for (ack <- acks.values)
+      ack.cancel()
     println("Connection closed, unsubscribed.")
+    deleteMessages(lastSequenceNr)
+    deleteSnapshots(SnapshotSelectionCriteria())
     context.stop(self)
   }
 
@@ -129,8 +176,8 @@ class MessagesHandler(connection: ActorRef) extends PersistentActor {
 
   }
 
-  def scheduleTimeout(): Unit = {
-    timeOutTask = Option(system.scheduler.scheduleOnce(5 seconds) {
+  def scheduleTimeout(delay : Int = 5): Unit = {
+    timeOutTask = Option(system.scheduler.scheduleOnce(delay seconds) {
       connection ! ConfirmedClose
       context.stop(self)
     })
@@ -150,6 +197,11 @@ class MessagesHandler(connection: ActorRef) extends PersistentActor {
 
     case TopicsSelected(data) =>
       selectTopics(data)
+
+    case SnapshotOffer(_, snapshot: Map[Int, Message]) =>
+      ackMes = snapshot
+      for (message <- ackMes)
+        self ! message._2
 
     case Connected(_, _) =>
       scheduleTimeout()
@@ -225,6 +277,22 @@ class MessagesHandler(connection: ActorRef) extends PersistentActor {
 
         case _ =>
       }
+  }
+
+  var resendTries : Int = 0;
+
+  var acks: Map[Int, Cancellable] = Map.empty[Int, Cancellable]
+
+  var ackMes : Map[Int, Message] = Map.empty[Int ,Message]
+
+  def createResend(message : Message) : Unit = {
+    acks += (message.id -> system.scheduler.schedule(100 milliseconds, 100 milliseconds){
+      connection ! Write(ByteString.fromString(Serialization.write(message)))
+      resendTries = resendTries + 1
+    })
+    ackMes += (message.id -> message)
+    deleteSnapshots(SnapshotSelectionCriteria())
+    saveSnapshot(ackMes)
   }
 
 }

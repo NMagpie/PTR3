@@ -1,10 +1,20 @@
 package main
 
 import akka.actor.{ActorRef, ActorSystem, Props}
-
 import Overlord._
 
 import scala.collection.mutable
+
+/*
+
+  MESSAGE BROKER
+
+  MADE BY: SOROCHIN NICHITA, FAF-191
+
+ */
+
+// Main method of the App, creates actor system, initializes Overlord and sends it messages about creation TCP-listener
+// and topic Supervisor
 
 object Main {
 

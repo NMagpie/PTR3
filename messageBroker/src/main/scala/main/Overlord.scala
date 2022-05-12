@@ -4,6 +4,13 @@ import akka.actor.{Actor, ActorRef, OneForOneStrategy, Props, SupervisorStrategy
 import network.Server
 import topic.TopicSupervisor
 
+/*
+
+  Main actor above all the actors, creates two supervisors (Server and TopicSupervisor)
+  and restarts them, if it is necessary.
+
+ */
+
 object Overlord {
 
   case class CreateServer()

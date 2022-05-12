@@ -2,7 +2,6 @@ package listener
 
 import akka.actor.{Actor, ActorRef, OneForOneStrategy, Props, SupervisorStrategy}
 import listener.ListenerSupervisor.CreateListener
-import main.Main.system
 
 object ListenerSupervisor {
 

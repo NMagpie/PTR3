@@ -9,6 +9,7 @@ import akka.io.Tcp
 import akka.stream.alpakka.sse.scaladsl.EventSource
 import akka.stream.scaladsl.Source
 import akka.util.ByteString
+import com.typesafe.config.ConfigFactory
 import main.Main.system
 import org.json4s.jackson.Serialization
 import org.json4s.native.JsonMethods.parse
@@ -42,7 +43,7 @@ class Listener(val number: Int) extends Actor {
 
   implicit def json4sJacksonFormats: Formats = jackson.Serialization.formats(NoTypeHints)
 
-  val client: ActorRef = system.actorOf(TcpClient.props(new InetSocketAddress("localhost",8000), self))
+  val client: ActorRef = system.actorOf(TcpClient.props(new InetSocketAddress(ConfigFactory.load.getString("messagebroker"),8000), self))
 
   val send: HttpRequest => Future[HttpResponse] = Http().singleRequest(_)
 
@@ -52,7 +53,7 @@ class Listener(val number: Int) extends Actor {
 
   def openSource(): Unit = {
     eventSource = Option(EventSource(
-      uri = Uri(s"http://localhost:4000/tweets/${this.number}"),
+      uri = Uri(s"http://${ConfigFactory.load().getString("rtpserver")}:4000/tweets/${this.number}"),
       send,
     ))
 

@@ -5,6 +5,13 @@ import akka.persistence.{PersistentActor, RecoveryCompleted}
 import network.MessagesHandler.Message
 import topic.Topic.{Subscribe, Unsubscribe}
 
+/*
+
+  Topic Actor - receives messages of corresponding topic and forwards it to all the consumers which are subscribed to it.
+  Persist list of subscribers in case of exception, failure and restart.
+
+ */
+
 object Topic {
   case class Subscribe(subscriber: ActorRef)
 

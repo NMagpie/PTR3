@@ -16,6 +16,8 @@
 
     <logger name="org.mongodb.driver.connection" level="off" />
 
+    <logger name="org.mongodb.driver.operation" level="off" />
+
     <logger name="akka.contrib.persistence.mongodb.ScalaMongoDriver" level="off" />
 
 </configuration>

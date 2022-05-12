@@ -1,19 +1,29 @@
 package topic
 
-import akka.actor.{OneForOneStrategy, Props, SupervisorStrategy}
+import akka.actor.{Kill, OneForOneStrategy, Props, SupervisorStrategy}
 import akka.persistence.PersistentActor
-import main.Main.topicPool
+import main.Main.{system, topicPool}
 import network.MessagesHandler.Message
 import topic.TopicSupervisor.CreateTopic
 
+import scala.concurrent.ExecutionContextExecutor
 import scala.concurrent.duration.DurationInt
 import scala.language.postfixOps
+
+/*
+
+  Topic Supervisor - creates and supervises all the Topic Actors.
+  Persists list of Topic Actors, and restarts it in case of exception, failure or restart.
+
+ */
 
 object TopicSupervisor {
   case class CreateTopic(message: Message)
 }
 
 class TopicSupervisor extends PersistentActor {
+
+  implicit val executor: ExecutionContextExecutor = system.dispatcher
 
   override def persistenceId: String = "TopicSupervisor"
 
@@ -28,7 +38,7 @@ class TopicSupervisor extends PersistentActor {
 
 //  override def preStart(): Unit = {
 //    super.preStart()
-//    context.system.scheduler.scheduleOnce(1 minute) {
+//    context.system.scheduler.scheduleOnce(2 minutes) {
 //      topicPool.values.head ! Kill
 //    }
 //  }

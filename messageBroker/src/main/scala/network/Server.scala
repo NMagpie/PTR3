@@ -2,14 +2,22 @@ package network
 
 import akka.actor.{Actor, OneForOneStrategy, Props, SupervisorStrategy}
 import akka.io.{IO, Tcp}
+import com.typesafe.config.ConfigFactory
 
 import java.net.InetSocketAddress
 import scala.language.postfixOps
 
+/*
+
+  Server listener, listens for the incoming TCP-connections, if there is one - creates TCP-connection inner actor
+  and corresponding message handler actor.
+
+ */
+
 class Server extends Actor {
 
   import akka.io.Tcp._
-  import context.system
+  import main.Main.system
 
   override val supervisorStrategy: OneForOneStrategy = OneForOneStrategy() {
     case _ => SupervisorStrategy.Restart
@@ -17,7 +25,7 @@ class Server extends Actor {
 
   var ids : Int = 0
 
-  IO(Tcp) ! Bind(self, new InetSocketAddress("localhost", 8000))
+  IO(Tcp) ! Bind(self, new InetSocketAddress(ConfigFactory.load.getString("hostname"), 8000))
 
   def receive: Receive = {
     case Bound(_) =>

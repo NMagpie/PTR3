@@ -37,7 +37,9 @@ class TcpClient(remote: InetSocketAddress, listener: ActorRef, id: Int) extends 
       val jsonTopics = parse(data.utf8String)
       val topics = (jsonTopics \ "topics").extract[Set[String]]
       for (topic <- topics)
-        if (r.nextInt(100) > 90) {
+        if (r.nextInt(100) > 85
+          //&& topic != "en"
+        ) {
           selectedTopics += topic
         }
 

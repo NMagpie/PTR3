@@ -6,6 +6,8 @@ val akkaVersion = "2.6.18"
 
 val akkaHttpVersion = "10.2.9"
 
+enablePlugins(JavaAppPackaging)
+
 scalacOptions ++= Seq(
   "-feature",
   "-deprecation",

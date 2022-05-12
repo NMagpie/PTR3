@@ -33,4 +33,4 @@ producer/.vscode
 
 .idea
 
-*.sh
+runRTP.sh

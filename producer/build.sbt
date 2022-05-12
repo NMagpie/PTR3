@@ -1,3 +1,4 @@
+
 ThisBuild / version := "0.1.0-SNAPSHOT"
 
 ThisBuild / scalaVersion := "2.13.0"
@@ -5,6 +6,8 @@ ThisBuild / scalaVersion := "2.13.0"
 val akkaVersion = "2.6.18"
 
 val akkaHttpVersion = "10.2.9"
+
+enablePlugins(JavaAppPackaging)
 
 scalacOptions ++= Seq(
   "-feature",
@@ -28,5 +31,5 @@ libraryDependencies ++= Seq(
 
 lazy val root = (project in file("."))
   .settings(
-    name := "project"
+    name := "producer"
   )

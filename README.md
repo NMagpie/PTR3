@@ -27,7 +27,15 @@ possibilities. `Consumers` and `Producers` can be developed as you wish
 and using language you wish, the only point it has to create TCP connection and follow
 several rules that are mentioned below.
 
+> Note: You can dockerize all three projects, just by firstly running `runDocker.sh` in every project. Pulling docker image of mongodb 
+(docker pull mongo) and rtp server (mentionet below) and then running `runCompose.sh` you can compose and run all the images together and then run whole project
+with one producer and one consumer.
+
 All the diagrams and documents are located in folder `docs`.
+
+For all the Apps, you can find configuration in `/src/resources/application.conf`. 
+There you can configure network addresses for Apps (like `hostname`, `messagebroker` and address of mongodb server.
+For every value default is `localhost`).
 
 # Main Components
 
@@ -71,6 +79,17 @@ To send selected topics back, just send the next JSON:
 Instead of `"en", "es"` put your own list of topics.
 
 ### 4.  Profit! Your consumer now receives messages.
+
+> Note: Don't forget for every message to resend to `MessageBroker` a Acknowledgement message. Just 
+create Akka Message like mentioned below (id - is the id of the message that was acknowledged).
+
+```scala
+object MessagesHandler {
+
+  case class Acknowledgement(id: Int)
+
+}
+```
 
 - ## Producer
 
