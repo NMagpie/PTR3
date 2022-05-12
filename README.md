@@ -137,4 +137,8 @@ docker run -p 4000:4000 alexburlacu/rtp-server:faf18x
 
 - ### Alpakka SSE - 3.0.4
 
-- ### JSON4s Jackson - 4.1.0-M1
+- ### Akka Persistance - 2.6.18
+
+- ### Akka Persistance Mongo Scala - 3.0.8
+
+- ### Json4s Jackson - 4.1.0M1
