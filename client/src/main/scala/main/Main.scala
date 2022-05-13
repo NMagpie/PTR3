@@ -8,7 +8,7 @@ import java.lang.Thread.sleep
 
 object Main {
   //sheeeeeesh
-  //sleep(15000)
+  //sleep(30000)
 
   implicit val system: ActorSystem = ActorSystem("mainSystem")
 

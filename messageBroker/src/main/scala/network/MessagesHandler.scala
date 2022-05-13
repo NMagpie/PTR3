@@ -283,12 +283,17 @@ class MessagesHandler(connection: ActorRef) extends PersistentActor {
 
   var acks: Map[Int, Cancellable] = Map.empty[Int, Cancellable]
 
-  var ackMes : Map[Int, Message] = Map.empty[Int ,Message]
+  var ackMes : Map[Int, Message] = Map.empty[Int, Message]
 
   def createResend(message : Message) : Unit = {
     acks += (message.id -> system.scheduler.schedule(100 milliseconds, 100 milliseconds){
       connection ! Write(ByteString.fromString(Serialization.write(message)))
       resendTries = resendTries + 1
+      if (resendTries == 100) {
+        println(s"[${self.path.name}] Number of retries has been exceeded, turning down connection.")
+        connection ! Close
+        context.stop(self)
+      }
     })
     ackMes += (message.id -> message)
     deleteSnapshots(SnapshotSelectionCriteria())
