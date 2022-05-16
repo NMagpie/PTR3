@@ -10,7 +10,7 @@ import akka.stream.alpakka.sse.scaladsl.EventSource
 import akka.stream.scaladsl.Source
 import akka.util.ByteString
 import com.typesafe.config.ConfigFactory
-import main.Main.system
+import main.Main.{isInteractive, system}
 import org.json4s.jackson.Serialization
 import org.json4s.native.JsonMethods.parse
 import org.json4s.{Formats, NoTypeHints, jackson}
@@ -19,6 +19,7 @@ import network.TcpClient
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicInteger
 import scala.concurrent.Future
+import scala.io.StdIn.readLine
 
 object Listener {
 
@@ -29,6 +30,8 @@ object Listener {
   case class Message(id: Int, message: String, topic: String)
 
   case class OpenSource()
+
+  case class WaitForInput()
 
   var ids: AtomicInteger = new AtomicInteger(0)
 
@@ -84,7 +87,11 @@ class Listener(val number: Int) extends Actor {
 
     case Connected(_, _) =>
       println("Connected to the server!")
-      openSource()
+
+      if (isInteractive)
+        self ! WaitForInput
+      else
+        openSource()
 
     case CommandFailed(_: Connect) =>
       println("Unable to connect to the server!")
@@ -96,6 +103,15 @@ class Listener(val number: Int) extends Actor {
       val byteMessage = ByteString.fromString(Serialization.write(a))
 
       client ! byteMessage
+
+      if (isInteractive)
+        self ! WaitForInput
+
+    case WaitForInput =>
+      val topic = readLine("Topic: ")
+      val text = readLine("Message: ")
+
+      self ! Tweet(ids.getAndIncrement(), text, topic)
   }
 
 }

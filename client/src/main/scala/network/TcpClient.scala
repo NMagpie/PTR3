@@ -4,11 +4,13 @@ import akka.actor.{Actor, ActorRef, Props}
 import akka.io.{IO, Tcp}
 import akka.util.ByteString
 import client.Client.Message
+import main.Main.isInteractive
 import org.json4s.{Formats, NoTypeHints, jackson}
 import org.json4s.jackson.Serialization
 import org.json4s.native.JsonMethods.parse
 
 import java.net.InetSocketAddress
+import scala.io.StdIn.readLine
 import scala.util.Random
 
 object TcpClient {
@@ -36,16 +38,26 @@ class TcpClient(remote: InetSocketAddress, listener: ActorRef, id: Int) extends 
     case Received(data) =>
       val jsonTopics = parse(data.utf8String)
       val topics = (jsonTopics \ "topics").extract[Set[String]]
-      for (topic <- topics)
-        if (r.nextInt(100) > 85
+
+      if (isInteractive) {
+        val selectingTopics = readLine(s"Choose topics or leave empty to subscribe to all the topics:\n $topics\n")
+
+        if (selectingTopics == "")
+          selectedTopics = topics
+        else
+          selectedTopics = selectingTopics.split(" ").toSet
+      } else {
+        for (topic <- topics)
+          if (r.nextInt(100) > 85
           //&& topic != "en"
-        ) {
-          selectedTopics += topic
-        }
+          ) {
+            selectedTopics += topic
+          }
 
-      //selectedTopics += "de"
+        //selectedTopics += "de"
 
-      println(s"Client${this.id}: Selected topics: $selectedTopics")
+        println(s"Client${this.id}: Selected topics: $selectedTopics")
+      }
 
       connection.get ! Write(ByteString.fromString(Serialization.write("topics"->selectedTopics)))
 

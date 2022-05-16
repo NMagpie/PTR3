@@ -38,8 +38,8 @@ class Client extends Actor {
 
   def receive: Receive = {
     case Message(id, message, topic) =>
-      val ack = ByteString.fromString(Serialization.write(Acknowledgement(id)))
-      client ! ack
+      //val ack = ByteString.fromString(Serialization.write(Acknowledgement(id)))
+      //client ! ack
       println("Client" + this.id + s"[$topic]:[$id] $message")
 
   }

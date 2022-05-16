@@ -1,11 +1,11 @@
 package network
 
-import akka.actor.{ActorRef, Cancellable, Kill}
+import akka.actor.{Actor, ActorRef, Cancellable}
 import akka.io.Tcp
-import akka.persistence.{DeleteMessagesSuccess, DeleteSnapshotSuccess, PersistentActor, SnapshotOffer, SnapshotSelectionCriteria}
+import akka.persistence.{DeleteMessagesSuccess, DeleteSnapshotSuccess}
 import akka.util.ByteString
 import main.Main.{topicPool, topicSup}
-import network.MessagesHandler.{Acknowledgement, ConnectionType, GiveTopics, SubscribeToAll, TopicsSelected}
+import network.MessagesHandler.{Acknowledgement, GiveTopics, SubscribeToAll}
 import org.json4s.{Formats, NoTypeHints, jackson}
 import org.json4s.jackson.Serialization
 import org.json4s.native.JsonMethods.parse
@@ -32,28 +32,14 @@ object MessagesHandler {
 
   case class GiveTopics()
 
-  case class ConnectionType(connType: ByteString)
-
-  case class TopicsSelected(topics: ByteString)
-
   case class Acknowledgement(id: Int)
 
 }
 
-class MessagesHandler(connection: ActorRef) extends PersistentActor {
+class MessagesHandler(connection: ActorRef) extends Actor {
   import Tcp._
   import main.Main.system
   import MessagesHandler.Message
-
-  override def persistenceId: String = self.path.name
-
-//    override def preStart(): Unit = {
-//      super.preStart()
-//      if (self.path.name == "handler-2")
-//      context.system.scheduler.scheduleOnce(2 minutes) {
-//        self ! Kill
-//      }
-//    }
 
   implicit val executor: ExecutionContextExecutor = system.dispatcher
 
@@ -80,7 +66,7 @@ class MessagesHandler(connection: ActorRef) extends PersistentActor {
 
     case a @ Message(_, _, _) =>
         connection ! Write(ByteString.fromString(Serialization.write(a)))
-        createResend(a)
+        //createResend(a)
 
     case SubscribeToAll =>
       for (topic <- topics) {
@@ -95,9 +81,6 @@ class MessagesHandler(connection: ActorRef) extends PersistentActor {
         resendTries = 0
         acks(ack.id).cancel()
         acks -= ack.id
-        ackMes -= ack.id
-        deleteSnapshots(SnapshotSelectionCriteria())
-        saveSnapshot(ackMes)
       }
 
       println(s"Ack[${ack.id}]")
@@ -133,10 +116,7 @@ class MessagesHandler(connection: ActorRef) extends PersistentActor {
       connection ! Write(ByteString.fromString(jsonTopics))
 
     case Received(data) =>
-      persist(TopicsSelected(data)) { _ =>
-        deleteMessages(1)
         selectTopics(data)
-      }
 
     case Connected =>
 
@@ -164,9 +144,7 @@ class MessagesHandler(connection: ActorRef) extends PersistentActor {
     }
     for (ack <- acks.values)
       ack.cancel()
-    println("Connection closed, unsubscribed.")
-    deleteMessages(lastSequenceNr)
-    deleteSnapshots(SnapshotSelectionCriteria())
+    //println("Connection closed, unsubscribed.")
     context.stop(self)
   }
 
@@ -190,42 +168,10 @@ class MessagesHandler(connection: ActorRef) extends PersistentActor {
     }
   }
 
-  override def receiveRecover: Receive = {
-
-    case ConnectionType(data) =>
-      connType(data)
-
-    case TopicsSelected(data) =>
-      selectTopics(data)
-
-    case SnapshotOffer(_, snapshot: Map[Int, Message]) =>
-      ackMes = snapshot
-      for (message <- ackMes)
-        self ! message._2
-
-    case Connected(_, _) =>
-      scheduleTimeout()
-
-    case Closed =>
-      context.stop(self)
-
-    case Aborted =>
-      context.stop(self)
-
-    case ConfirmedClosed =>
-      context.stop(self)
-
-    case PeerClosed =>
-      context.stop(self)
-
-    case ErrorClosed(_) =>
-      context.stop(self)
-  }
-
-  override def receiveCommand: Receive = {
+  override def receive: Receive = {
 
     case Received(data) =>
-      persist(ConnectionType(data)) ( _ => connType(data))
+      connType(data)
 
     case Connected(_, _) =>
       scheduleTimeout()
@@ -279,11 +225,9 @@ class MessagesHandler(connection: ActorRef) extends PersistentActor {
       }
   }
 
-  var resendTries : Int = 0;
+  var resendTries : Int = 0
 
   var acks: Map[Int, Cancellable] = Map.empty[Int, Cancellable]
-
-  var ackMes : Map[Int, Message] = Map.empty[Int, Message]
 
   def createResend(message : Message) : Unit = {
     acks += (message.id -> system.scheduler.schedule(100 milliseconds, 100 milliseconds){
@@ -295,9 +239,6 @@ class MessagesHandler(connection: ActorRef) extends PersistentActor {
         context.stop(self)
       }
     })
-    ackMes += (message.id -> message)
-    deleteSnapshots(SnapshotSelectionCriteria())
-    saveSnapshot(ackMes)
   }
 
 }
