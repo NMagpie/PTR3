@@ -5,17 +5,21 @@ import akka.io.{IO, Tcp}
 import akka.util.ByteString
 import client.Client.Message
 import main.Main.isInteractive
+import network.TcpClient.Acknowledgement
 import org.json4s.{Formats, NoTypeHints, jackson}
 import org.json4s.jackson.Serialization
 import org.json4s.native.JsonMethods.parse
+import org.json4s.JsonDSL._
 
 import java.net.InetSocketAddress
-import scala.io.StdIn.readLine
+import scala.io.StdIn.{readInt, readLine}
 import scala.util.Random
 
 object TcpClient {
   def props(remote: InetSocketAddress, replies: ActorRef, id: Int): Props =
     Props(new TcpClient(remote, replies, id))
+
+  case class Acknowledgement(id: Int, ackType: String)
 }
 
 class TcpClient(remote: InetSocketAddress, listener: ActorRef, id: Int) extends Actor {
@@ -27,7 +31,11 @@ class TcpClient(remote: InetSocketAddress, listener: ActorRef, id: Int) extends 
 
   IO(Tcp) ! Connect(remote)
 
-  val r: Random.type = scala.util.Random
+  val r: Random = new scala.util.Random
+
+  var QoS: Int = -1
+
+  var qos2Messages: Map[Int, ByteString] = Map.empty[Int, ByteString]
 
   var selectedTopics: Set[String] = Set.empty[String]
 
@@ -75,11 +83,36 @@ class TcpClient(remote: InetSocketAddress, listener: ActorRef, id: Int) extends 
       // O/S buffer was full
       listener ! "write failed"
     case Received(data) =>
-      val jsonMessage = parse(data.utf8String)
-      val id = (jsonMessage \ "id").extract[Int]
-      val topic = (jsonMessage \ "topic").extract[String]
-      val message = (jsonMessage \ "message").extract[String]
-      listener ! Message(id, message, topic)
+      QoS match {
+        case 0 =>
+          processMessage(data)
+
+        case 1 =>
+          processMessage(data)
+          val jsonMessage = parse(data.utf8String)
+          val id = (jsonMessage \ "id").extract[Int]
+          val ack = ByteString.fromString(Serialization.write(Acknowledgement(id, "ack")))
+          connection.get ! Write(ack)
+
+        case 2 =>
+          var ackType = ""
+
+          val jsonMessage = parse(data.utf8String)
+          val id = (jsonMessage \ "id").extract[Int]
+
+          if (data.utf8String.contains("senAck")) {
+            if (qos2Messages.contains(id))
+            processMessage(qos2Messages(id))
+            ackType = "done"
+            qos2Messages -= id
+          } else {
+            ackType = "recAck"
+            qos2Messages += (id -> data)
+          }
+
+          val ack = ByteString.fromString(Serialization.write(Acknowledgement(id, ackType)))
+          connection.get ! Write(ack)
+      }
     case "close" =>
       connection.get ! Close
     case _: ConnectionClosed =>
@@ -98,11 +131,29 @@ class TcpClient(remote: InetSocketAddress, listener: ActorRef, id: Int) extends 
 
       connection ! Register(self)
 
-      connection ! Write(ByteString.fromString(Serialization.write("connectionType"->"Consumer")))
+      if (isInteractive)
+        while (QoS == -1) {
+          print("Quality of Service [0-2]: ")
+          QoS = readInt()
+          if (QoS < 0 || QoS > 2)
+            QoS = -1
+        }
+      else
+        QoS = r.nextInt(3)
+
+      connection ! Write(ByteString.fromString(Serialization.write(("connectionType"->"Consumer") ~ ("QoS"->QoS))))
 
       this.connection = Option(connection)
 
       context.become(selectingTopics)
     case a @ _ => println(a)
+  }
+
+  def processMessage(data: ByteString): Unit = {
+    val jsonMessage = parse(data.utf8String)
+    val id = (jsonMessage \ "id").extract[Int]
+    val topic = (jsonMessage \ "topic").extract[String]
+    val message = (jsonMessage \ "message").extract[String]
+    listener ! Message(id, message, topic)
   }
 }

@@ -1,8 +1,7 @@
 package network
 
-import akka.actor.{Actor, ActorRef, Cancellable}
+import akka.actor.{Actor, ActorRef, Cancellable, PoisonPill}
 import akka.io.Tcp
-import akka.persistence.{DeleteMessagesSuccess, DeleteSnapshotSuccess}
 import akka.util.ByteString
 import main.Main.{topicPool, topicSup}
 import network.MessagesHandler.{Acknowledgement, GiveTopics, SubscribeToAll}
@@ -32,7 +31,7 @@ object MessagesHandler {
 
   case class GiveTopics()
 
-  case class Acknowledgement(id: Int)
+  case class Acknowledgement(id: Int, ackType: String)
 
 }
 
@@ -44,6 +43,8 @@ class MessagesHandler(connection: ActorRef) extends Actor {
   implicit val executor: ExecutionContextExecutor = system.dispatcher
 
   implicit def json4sJacksonFormats: Formats = jackson.Serialization.formats(NoTypeHints)
+
+  var QoS: Int = 0
 
   def producerHandler: Receive = {
     case Received(data) =>
@@ -66,7 +67,8 @@ class MessagesHandler(connection: ActorRef) extends Actor {
 
     case a @ Message(_, _, _) =>
         connection ! Write(ByteString.fromString(Serialization.write(a)))
-        //createResend(a)
+      if (QoS != 0)
+        createResend(a)
 
     case SubscribeToAll =>
       for (topic <- topics) {
@@ -79,15 +81,20 @@ class MessagesHandler(connection: ActorRef) extends Actor {
 
       if (acks.contains(ack.id)) {
         resendTries = 0
+
         acks(ack.id).cancel()
-        acks -= ack.id
+
+        QoS match {
+          case 1 =>
+            acks -= ack.id
+          case 2 =>
+            if (ack.ackType == "recAck") {
+              val jsonAck = Serialization.write(Acknowledgement(ack.id, "senAck"))
+              connection ! Write(ByteString.fromString(jsonAck))
+            } else
+              acks -= ack.id
+        }
       }
-
-      println(s"Ack[${ack.id}]")
-
-    case DeleteMessagesSuccess =>
-
-    case DeleteSnapshotSuccess =>
 
     case Connected =>
 
@@ -116,7 +123,14 @@ class MessagesHandler(connection: ActorRef) extends Actor {
       connection ! Write(ByteString.fromString(jsonTopics))
 
     case Received(data) =>
-        selectTopics(data)
+      val jsonTopics = parse(data.utf8String)
+      val topics = (jsonTopics \ "topics").extract[Set[String]]
+
+      cancelTimeout()
+
+      self ! SubscribeToAll
+
+      context.become(consumerHandler(topics))
 
     case Connected =>
 
@@ -140,7 +154,8 @@ class MessagesHandler(connection: ActorRef) extends Actor {
 
   def endConsumer(topics: Set[String]): Unit = {
     for (topic <- topics) {
-      topicPool(topic) ! Unsubscribe(self)
+      if (topicPool.contains(topic))
+        topicPool(topic) ! Unsubscribe(self)
     }
     for (ack <- acks.values)
       ack.cancel()
@@ -149,10 +164,6 @@ class MessagesHandler(connection: ActorRef) extends Actor {
   }
 
   var timeOutTask : Option[Cancellable] = None
-
-  def scheduleMessage(): Unit = {
-
-  }
 
   def scheduleTimeout(delay : Int = 5): Unit = {
     timeOutTask = Option(system.scheduler.scheduleOnce(delay seconds) {
@@ -171,39 +182,6 @@ class MessagesHandler(connection: ActorRef) extends Actor {
   override def receive: Receive = {
 
     case Received(data) =>
-      connType(data)
-
-    case Connected(_, _) =>
-      scheduleTimeout()
-
-    case Closed =>
-      context.stop(self)
-
-    case Aborted =>
-      context.stop(self)
-
-    case ConfirmedClosed =>
-      context.stop(self)
-
-    case PeerClosed =>
-      context.stop(self)
-
-    case ErrorClosed(_) =>
-      context.stop(self)
-  }
-
-  def selectTopics(data: ByteString): Unit = {
-    val jsonTopics = parse(data.utf8String)
-    val topics = (jsonTopics \ "topics").extract[Set[String]]
-
-    cancelTimeout()
-
-    self ! SubscribeToAll
-
-    context.become(consumerHandler(topics))
-  }
-
-  def connType(data: ByteString): Unit = {
       val connType = parse(data.utf8String)
 
       (connType \ "connectionType").extract[String] match {
@@ -223,6 +201,26 @@ class MessagesHandler(connection: ActorRef) extends Actor {
 
         case _ =>
       }
+
+      QoS = (connType \ "QoS").extract[Int]
+
+    case Connected(_, _) =>
+      scheduleTimeout()
+
+    case Closed =>
+      context.stop(self)
+
+    case Aborted =>
+      context.stop(self)
+
+    case ConfirmedClosed =>
+      context.stop(self)
+
+    case PeerClosed =>
+      context.stop(self)
+
+    case ErrorClosed(_) =>
+      context.stop(self)
   }
 
   var resendTries : Int = 0
