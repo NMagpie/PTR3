@@ -1,26 +1,44 @@
 package network
 
-import akka.actor.{Actor, ActorRef, Props}
+import akka.actor.{Actor, ActorRef, Cancellable, Props}
 import akka.io.{IO, Tcp}
 import akka.util.ByteString
-import listener.Listener.WaitForInput
+import com.typesafe.config.ConfigFactory
 import main.Main.isInteractive
+import network.TcpClient.{CommunicationMessage, Message}
 import org.json4s.{Formats, NoTypeHints, jackson}
 import org.json4s.jackson.Serialization
+import org.json4s.native.JsonMethods.parse
 import org.json4s.JsonDSL._
-
 import java.net.InetSocketAddress
+
+import scala.concurrent.ExecutionContextExecutor
+import scala.concurrent.duration.DurationInt
 import scala.io.StdIn.readInt
+import scala.language.postfixOps
 
 object TcpClient {
   def props(remote: InetSocketAddress, replies: ActorRef): Props =
     Props(new TcpClient(remote, replies))
+
+  trait CommunicationMessage {
+    def id: Int
+  }
+
+  case class Message(id: Int, message: String, topic: String) extends CommunicationMessage
+
+  case class Acknowledgement(id: Int, ackType: String) extends CommunicationMessage
+
+  val printAck = ConfigFactory.load.getBoolean("printAck")
 }
 
 class TcpClient(remote: InetSocketAddress, listener: ActorRef) extends Actor {
 
-  import Tcp._
+  import Tcp.{Connect, CommandFailed, Connected, Register, Write, Received, Close, ConnectionClosed}
   import context.system
+  import TcpClient.{Acknowledgement, printAck}
+
+  implicit val executor: ExecutionContextExecutor = system.dispatcher
 
   implicit def json4sJacksonFormats: Formats = jackson.Serialization.formats(NoTypeHints)
 
@@ -28,14 +46,16 @@ class TcpClient(remote: InetSocketAddress, listener: ActorRef) extends Actor {
 
   var QoS: Int = -1
 
+  var connection: Option[ActorRef] = None
+
   def receive: Receive = {
     case a @ CommandFailed(_: Connect) =>
       listener ! a
       context.stop(self)
 
     case c @ Connected(_, _) =>
-      val connection = sender()
-      connection ! Register(self)
+      connection = Option(sender())
+      connection.get ! Register(self)
 
       if (isInteractive)
         while (QoS == -1) {
@@ -47,21 +67,83 @@ class TcpClient(remote: InetSocketAddress, listener: ActorRef) extends Actor {
       else
         QoS = (new scala.util.Random).nextInt(3)
 
-      connection ! Write(ByteString.fromString(Serialization.writePretty(("connectionType"->"Producer")~("QoS"->QoS))))
+      connection.get ! Write(ByteString.fromString(Serialization.writePretty(("connectionType"->"Producer")~("QoS"->QoS))))
 
       listener ! c
+
       context.become {
+        case a @ Message(_, _, _) =>
+          val data = ByteString.fromString(Serialization.write(a))
+          connection.get ! Write(data)
+          if (printAck)
+            println(s"${listener.path.name}[${a.id}] sen: message")
+
+          if (QoS > 0)
+            createResend(a)
+
         case data: ByteString =>
-          connection ! Write(data)
+
         case CommandFailed(_: Write) =>
           listener ! "write failed"
+
         case Received(data) =>
-          listener ! data
+          val ack = parse(data.utf8String).extract[Acknowledgement]
+
+          if (acks.contains(ack.id)) {
+            resendTries = 0
+
+            acks(ack.id).cancel()
+
+            QoS match {
+              case 1 =>
+                if (printAck)
+                  println(s"${listener.path.name}[${ack.id}] rec: ack")
+                acks -= ack.id
+              case 2 =>
+                ack.ackType match {
+                  case "recAck" =>
+                    if (printAck)
+                      println(s"${listener.path.name}[${ack.id}] rec: recAck\n${listener.path.name}[${ack.id}] sen: senAcky")
+                    val jsonAck = Serialization.write(Acknowledgement(ack.id, "senAck"))
+
+                    createResend(ack)
+
+                    connection.get ! Write(ByteString.fromString(jsonAck))
+                  case "done" =>
+                    if (printAck)
+                      println(s"${listener.path.name}[${ack.id}] rec: doneAck")
+                    acks(ack.id).cancel()
+
+                    acks -= ack.id
+                  case _ =>
+                }
+            }
+          }
+
         case "close" =>
-          connection ! Close
+          connection.get ! Close
         case _: ConnectionClosed =>
           listener ! "connection closed"
           context.stop(self)
       }
   }
+
+  var resendTries : Int = 0
+
+  var acks: Map[Int, Cancellable] = Map.empty[Int, Cancellable]
+
+  def createResend(message: CommunicationMessage) : Unit = {
+    acks += (message.id -> system.scheduler.schedule(750 milliseconds, 750 milliseconds) {
+      if (printAck)
+        println(s"${listener.path.name}[${message.id}] res: $message")
+      connection.get ! Write(ByteString.fromString(Serialization.write(message)))
+      resendTries = resendTries + 1
+      if (resendTries == 25) {
+        println("Number of retries has been exceeded, turning down connection.")
+        connection.get ! Close
+        context.stop(self)
+      }
+    })
+  }
+
 }

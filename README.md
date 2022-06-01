@@ -10,6 +10,7 @@
   - [Consumer](#consumer)
   - [Producer](#producer)
   - [RTP-Server](#rtp-server)
+- [Quality of Service (QoS)](#quality-of-service-qos)
 - [User Technologies](#used-technologies)
 
 # Description
@@ -58,9 +59,13 @@ Of course, you can create your own `Consumer`. How it can connect to the Message
 ### 2. Send next JSON:
 ```json
 {
-  "connectionType": "Consumer"
+  "connectionType": "Consumer",
+  "QoS": 0
 }
 ```
+> Note: QoS stands for "Quality of Service" like MQTT does have, which can receive values from 0 to 2. 
+More about QoS you can read [here](https://www.hivemq.com/blog/mqtt-essentials-part-6-mqtt-quality-of-service-levels/).
+
 ### 3. After, `Consumer` receives list of available topics. It can choose, all, some or none of them.
 > Note: If `Consumer` will include topic that do not exist in Message Broker actual list, it
 this topic will be ignored.
@@ -79,9 +84,6 @@ To send selected topics back, just send the next JSON:
 Instead of `"en", "es"` put your own list of topics.
 
 ### 4.  Profit! Your consumer now receives messages.
-
-> Note: Don't forget for every message to resend to `MessageBroker` a Acknowledgement message. Just 
-create Akka Message like mentioned below (id - is the id of the message that was acknowledged).
 
 ```scala
 object MessagesHandler {
@@ -103,7 +105,8 @@ Of course, you can create your own `Producer`. How it can connect to the Message
 ### 2. Send next JSON:
 ```json
 {
-  "connectionType": "Produces"
+  "connectionType": "Producer",
+  "QoS": 0
 }
 ```
 
@@ -128,6 +131,33 @@ To run the Docker Image, you can use next line:
 ```shell
 docker run -p 4000:4000 alexburlacu/rtp-server:faf18x
 ```
+# Quality of Service (QoS)
+
+Similar to MQTT, this Message Broker has QoS Technology.
+
+### QoS Level 0
+
+For this QoS Level client don't have to make any kind of Acknowledgement. Just receive it and that's all.
+
+![qos0](docs/images/qos0.png)
+
+### QoS Level 1
+
+For this QoS Level Receiver just has to send back Acknowledgement message with `id` of the received message and `ackType`,
+with value `ack`. If Message Broker is a Sender and has not received Acknowledgement message, it resends original message every 100 milliseconds.
+If there were last 100 message resends without Acknowledgement, the connection will be closed by the Message Broker.
+
+![qos1](docs/images/qos1.png)
+
+### QoS Level 2
+
+For this QoS Level Sender sends original message to the Receiver, and waits for the Acknowledgement message from the Sender
+with corresponding `id` and `ackType` with value `recAck`. If such Acknowledgement was not received, Sernder resends original message.
+If Sender has received Acknowledgement from Receiver, it stops resending original message and sends to the Receiver another Acknowledgement
+message with the same `id` and `ackType` with value `senAck`. When Receiver gets such message, it processes the original message, and sends to
+Sender Acknowledgement message with (guess what?) same `id` and `ackType` with value `done`. Afterwards, Sender can easily resend this message again.
+
+![qos2](docs/images/qos2.png)
 
 # Used Technologies 
 

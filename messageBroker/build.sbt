@@ -22,7 +22,6 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-stream" % akkaVersion,
   "com.typesafe.akka" %% "akka-stream-typed" % akkaVersion,
   "com.typesafe.akka" %% "akka-http" % akkaHttpVersion,
-  "com.lightbend.akka" %% "akka-stream-alpakka-sse" % "3.0.4",
   "org.scalameta" %% "munit" % "0.7.26" % Test,
   "org.json4s" %% "json4s-jackson" % "4.1.0-M1",
   "org.json4s" %% "json4s-native" % "4.1.0-M1",

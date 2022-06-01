@@ -27,9 +27,9 @@ class Overlord extends Actor {
     case _ => SupervisorStrategy.Restart
   }
 
-  var server : Option[ActorRef] = None
+  var server: Option[ActorRef] = None
 
-  var topicSup : Option[ActorRef] = None
+  var topicSup: Option[ActorRef] = None
 
   def receive: Receive = {
     case CreateServer =>

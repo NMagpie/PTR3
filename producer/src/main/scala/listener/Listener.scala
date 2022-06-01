@@ -21,13 +21,11 @@ import java.util.concurrent.atomic.AtomicInteger
 import scala.concurrent.Future
 import scala.io.StdIn.readLine
 
+import network.TcpClient.Message
+
 object Listener {
 
   case class GetData(json: String)
-
-  case class Tweet(id: Int, message: String, topic: String)
-
-  case class Message(id: Int, message: String, topic: String)
 
   case class OpenSource()
 
@@ -79,7 +77,7 @@ class Listener(val number: Int) extends Actor {
 
     val topic = (tweet \ "message" \ "tweet" \ "user" \ "lang").extract[String]
 
-    self ! Tweet(ids.getAndIncrement(), text, topic)
+    client ! Message(ids.getAndIncrement(), text, topic)
 
   }
 
@@ -97,21 +95,15 @@ class Listener(val number: Int) extends Actor {
       println("Unable to connect to the server!")
       System.exit(0)
 
-    case a @ Tweet(_, _, _) =>
-      //println(Serialization.write(a))
-
-      val byteMessage = ByteString.fromString(Serialization.write(a))
-
-      client ! byteMessage
-
-      if (isInteractive)
-        self ! WaitForInput
-
     case WaitForInput =>
-      val topic = readLine("Topic: ")
-      val text = readLine("Message: ")
 
-      self ! Tweet(ids.getAndIncrement(), text, topic)
+      while (true) {
+        val topic = readLine("Topic: ")
+        val text = readLine("Message: ")
+
+        client ! Message(ids.getAndIncrement(), text, topic)
+      }
+
   }
 
 }

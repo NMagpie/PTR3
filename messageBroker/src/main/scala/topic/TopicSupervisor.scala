@@ -1,6 +1,6 @@
 package topic
 
-import akka.actor.{Kill, OneForOneStrategy, Props, SupervisorStrategy}
+import akka.actor.{OneForOneStrategy, Props, SupervisorStrategy}
 import akka.persistence.PersistentActor
 import main.Main.{system, topicPool}
 import network.MessagesHandler.Message
@@ -36,12 +36,12 @@ class TopicSupervisor extends PersistentActor {
     println("TopicSupervisor is restarting!")
   }
 
-//  override def preStart(): Unit = {
-//    super.preStart()
-//    context.system.scheduler.scheduleOnce(2 minutes) {
-//      topicPool.values.head ! Kill
-//    }
-//  }
+  //  override def preStart(): Unit = {
+  //    super.preStart()
+  //    context.system.scheduler.scheduleOnce(2 minutes) {
+  //      topicPool.values.head ! Kill
+  //    }
+  //  }
 
   def addTopic(name: String): Unit = {
     val topic = context.actorOf(Props(classOf[Topic], name), s"topic-$name")
@@ -62,10 +62,10 @@ class TopicSupervisor extends PersistentActor {
 
   val receiveCommand: Receive = {
 
-    case c @ CreateTopic(message) =>
+    case c@CreateTopic(message) =>
       val name = message.topic
       if (!topicPool.contains(name)) {
-        persist(c) ( c => {
+        persist(c)(c => {
           addTopic(c.message.topic)
           topicPool(name) ! message
         })

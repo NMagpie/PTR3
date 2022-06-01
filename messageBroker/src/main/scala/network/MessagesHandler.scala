@@ -1,13 +1,14 @@
 package network
 
-import akka.actor.{Actor, ActorRef, Cancellable, PoisonPill}
+import akka.actor.{Actor, ActorRef, Cancellable}
 import akka.io.Tcp
 import akka.util.ByteString
-import main.Main.{topicPool, topicSup}
-import network.MessagesHandler.{Acknowledgement, GiveTopics, SubscribeToAll}
-import org.json4s.{Formats, NoTypeHints, jackson}
+import com.typesafe.config.ConfigFactory
+import main.Main.{stable, topicPool, topicSup}
+import network.MessagesHandler.CommunicationMessage
 import org.json4s.jackson.Serialization
 import org.json4s.native.JsonMethods.parse
+import org.json4s.{Formats, NoTypeHints, jackson}
 import topic.Topic.{Subscribe, Unsubscribe}
 import topic.TopicSupervisor.CreateTopic
 
@@ -25,20 +26,30 @@ import scala.language.postfixOps
  */
 
 object MessagesHandler {
-  case class Message(id: Int, message: String, topic: String)
+
+  //////////////////////////////////////////////
+
+  trait CommunicationMessage {
+    def id: Int
+  }
+
+  case class Message(id: Int, message: String, topic: String) extends CommunicationMessage
 
   case class SubscribeToAll()
 
   case class GiveTopics()
 
-  case class Acknowledgement(id: Int, ackType: String)
+  case class Acknowledgement(id: Int, ackType: String) extends CommunicationMessage
+
+  val printAck = ConfigFactory.load.getBoolean("printAck")
 
 }
 
 class MessagesHandler(connection: ActorRef) extends Actor {
+
+  import MessagesHandler.{Message, _}
   import Tcp._
   import main.Main.system
-  import MessagesHandler.Message
 
   implicit val executor: ExecutionContextExecutor = system.dispatcher
 
@@ -46,28 +57,93 @@ class MessagesHandler(connection: ActorRef) extends Actor {
 
   var QoS: Int = 0
 
+  var qos2Messages: Map[Int, ByteString] = Map.empty[Int, ByteString]
+
+  val idPrefix: Int = self.path.name.substring(8).toInt * 1_000
+
+  def processMessage(data: ByteString): Unit = {
+    val message = parse(data.utf8String).extract[Message]
+
+    val id = if (message.id > 1_000) {
+      java.lang.Math.floorMod(message.id, 1_000)
+    } else {
+      message.id
+    }
+
+    val messUnique = Message(idPrefix + id, message.message, message.topic)
+
+    if (topicPool.contains(messUnique.topic)) {
+      topicPool(messUnique.topic) ! messUnique
+    } else {
+      topicSup.get ! CreateTopic(messUnique)
+    }
+  }
+
   def producerHandler: Receive = {
     case Received(data) =>
-      val message = parse(data.utf8String).extract[Message]
+      if (stable) {
+        QoS match {
+          case 0 =>
+            if (printAck)
+              println(s"${self.path.name} rec: message")
+            processMessage(data)
 
-      if (topicPool.contains(message.topic)) {
-        topicPool(message.topic) ! message
-      } else {
-        topicSup.get ! CreateTopic(message)
+          case 1 =>
+            processMessage(data)
+            val jsonMessage = parse(data.utf8String)
+            val id = (jsonMessage \ "id").extract[Int]
+            val ack = ByteString.fromString(Serialization.write(Acknowledgement(id, "ack")))
+            if (printAck)
+              println(s"${self.path.name}[$id] rec: message\n${self.path.name}[$id] sen: ack\n")
+            connection ! Write(ack)
+
+          case 2 =>
+            var ackType = ""
+
+            val jsonMessage = parse(data.utf8String)
+            val id = (jsonMessage \ "id").extract[Int]
+
+            if (data.utf8String.contains("senAck")) {
+              if (acks.contains(id)) {
+                acks(id).cancel()
+                acks -= id
+              }
+              if (printAck)
+                println(s"${self.path.name}[$id] rec: senAck\n${self.path.name}[$id] sen: done\n")
+              if (qos2Messages.contains(id))
+                processMessage(qos2Messages(id))
+              ackType = "done"
+              qos2Messages -= id
+            } else {
+              if (printAck)
+                println(s"${self.path.name}[$id] rec: message\n${self.path.name}[$id] sen: recAck\n")
+              ackType = "recAck"
+              qos2Messages += (id -> data)
+              if (!acks.contains(id)) {
+                createResend(Acknowledgement(id, ackType))
+              }
+            }
+
+            val ack = ByteString.fromString(Serialization.write(Acknowledgement(id, ackType)))
+            connection ! Write(ack)
+        }
       }
 
     case Connected =>
 
-    case PeerClosed => context.stop(self)
+    case PeerClosed => endProducer()
 
-    case ErrorClosed(_) => context.stop(self)
+    case ErrorClosed(_) => endProducer()
   }
 
-  def consumerHandler(topics : Set[String]): Receive = {
+  def consumerHandler(topics: Set[String]): Receive = {
 
-    case a @ Message(_, _, _) =>
-        connection ! Write(ByteString.fromString(Serialization.write(a)))
-      if (QoS != 0)
+    case a@Message(_, _, _) =>
+      connection ! Write(ByteString.fromString(Serialization.write(a)))
+      if (printAck)
+        println(s"${self.path.name}[${a.id}] sen: message")
+
+      if (QoS > 0)
         createResend(a)
 
     case SubscribeToAll =>
@@ -77,22 +153,38 @@ class MessagesHandler(connection: ActorRef) extends Actor {
       }
 
     case Received(data) =>
-      val ack = parse(data.utf8String).extract[Acknowledgement]
+      if (stable) {
+        val ack = parse(data.utf8String).extract[Acknowledgement]
 
-      if (acks.contains(ack.id)) {
-        resendTries = 0
+        if (acks.contains(ack.id)) {
+          resendTries = 0
 
-        acks(ack.id).cancel()
+          acks(ack.id).cancel()
 
-        QoS match {
-          case 1 =>
-            acks -= ack.id
-          case 2 =>
-            if (ack.ackType == "recAck") {
-              val jsonAck = Serialization.write(Acknowledgement(ack.id, "senAck"))
-              connection ! Write(ByteString.fromString(jsonAck))
-            } else
+          QoS match {
+            case 1 =>
+              if (printAck)
+                println(s"${self.path.name}[${ack.id}] rec: ack")
               acks -= ack.id
+            case 2 =>
+              ack.ackType match {
+                case "recAck" =>
+                  if (printAck)
+                    println(s"${self.path.name}[${ack.id}] rec: recAck\n${self.path.name}[${ack.id}] sen: senAck\n")
+                  val jsonAck = Serialization.write(Acknowledgement(ack.id, "senAck"))
+
+                  createResend(ack)
+
+                  connection ! Write(ByteString.fromString(jsonAck))
+                case "done" =>
+                  if (printAck)
+                    println(s"${self.path.name}[${ack.id}] rec: doneAck")
+                  acks(ack.id).cancel()
+
+                  acks -= ack.id
+                case _ =>
+              }
+          }
         }
       }
 
@@ -113,12 +205,12 @@ class MessagesHandler(connection: ActorRef) extends Actor {
     case ErrorClosed(_) =>
       endConsumer(topics)
 
-    case a @ _ => println(a)
+    case a@_ => println(a)
   }
 
   def selectingTopics: Receive = {
     case GiveTopics =>
-      val jsonTopics = Serialization.write("topics"->topicPool.keySet)
+      val jsonTopics = Serialization.write("topics" -> topicPool.keySet)
 
       connection ! Write(ByteString.fromString(jsonTopics))
 
@@ -159,13 +251,18 @@ class MessagesHandler(connection: ActorRef) extends Actor {
     }
     for (ack <- acks.values)
       ack.cancel()
-    //println("Connection closed, unsubscribed.")
     context.stop(self)
   }
 
-  var timeOutTask : Option[Cancellable] = None
+  def endProducer() : Unit = {
+    for (ack <- acks.values)
+      ack.cancel()
+    context.stop(self)
+  }
 
-  def scheduleTimeout(delay : Int = 5): Unit = {
+  var timeOutTask: Option[Cancellable] = None
+
+  def scheduleTimeout(delay: Int = 5): Unit = {
     timeOutTask = Option(system.scheduler.scheduleOnce(delay seconds) {
       connection ! ConfirmedClose
       context.stop(self)
@@ -195,9 +292,9 @@ class MessagesHandler(connection: ActorRef) extends Actor {
 
           scheduleTimeout()
 
-          self ! GiveTopics
-
           context.become(selectingTopics)
+
+          self ! GiveTopics
 
         case _ =>
       }
@@ -223,15 +320,17 @@ class MessagesHandler(connection: ActorRef) extends Actor {
       context.stop(self)
   }
 
-  var resendTries : Int = 0
+  var resendTries: Int = 0
 
   var acks: Map[Int, Cancellable] = Map.empty[Int, Cancellable]
 
-  def createResend(message : Message) : Unit = {
-    acks += (message.id -> system.scheduler.schedule(100 milliseconds, 100 milliseconds){
+  def createResend(message: CommunicationMessage): Unit = {
+    acks += (message.id -> system.scheduler.schedule(750 milliseconds, 750 milliseconds) {
+      if (printAck)
+        println(s"${self.path.name}[${message.id}] res: $message")
       connection ! Write(ByteString.fromString(Serialization.write(message)))
       resendTries = resendTries + 1
-      if (resendTries == 100) {
+      if (resendTries == 25) {
         println(s"[${self.path.name}] Number of retries has been exceeded, turning down connection.")
         connection ! Close
         context.stop(self)

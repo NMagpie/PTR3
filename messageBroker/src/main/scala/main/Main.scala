@@ -1,9 +1,13 @@
 package main
 
 import akka.actor.{ActorRef, ActorSystem, Props}
-import Overlord._
+import com.typesafe.config.ConfigFactory
+import main.Main.system.{dispatcher, scheduler}
+import main.Overlord._
 
 import scala.collection.mutable
+import scala.concurrent.duration.DurationInt
+import scala.language.postfixOps
 
 /*
 
@@ -18,13 +22,15 @@ import scala.collection.mutable
 
 object Main {
 
+  var stable = true
+
   implicit val system: ActorSystem = ActorSystem("mainSystem")
 
   var topicPool: mutable.Map[String, ActorRef] = mutable.Map[String, ActorRef]()
 
-  var topicSup : Option[ActorRef] = None
+  var topicSup: Option[ActorRef] = None
 
-  var overlord : Option[ActorRef] = None
+  var overlord: Option[ActorRef] = None
 
   def main(args: Array[String]): Unit = {
 
@@ -33,6 +39,16 @@ object Main {
     overlord.get ! CreateTopicSup
 
     overlord.get ! CreateServer
+
+    if (!ConfigFactory.load.getBoolean("stable")) {
+      scheduler.schedule(2 seconds, 2 seconds) {
+        stable = !stable
+        if (stable)
+          println("Up")
+        else
+          println("Down")
+      }
+    }
 
   }
 }
