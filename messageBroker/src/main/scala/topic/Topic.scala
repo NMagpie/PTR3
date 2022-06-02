@@ -33,6 +33,8 @@ class Topic(name: String) extends PersistentActor {
 
   override def preStart(): Unit = super.preStart()
 
+  // Leftovers of the non-persistent mailbox
+
   //  override def receive: Receive = {
   //    case a @ Message(_, message, _) =>
   //      router.foreach(consumer => consumer ! a)
@@ -54,20 +56,16 @@ class Topic(name: String) extends PersistentActor {
   val receiveRecover: Receive = {
     case Subscribe(subscriber) =>
       router += subscriber
-    //println(s"Topic[$name]"+router+"\n")
 
     case Unsubscribe(subscriber) =>
       router -= subscriber
-    //println(s"Topic[$name]"+router+"\n")
 
     case RecoveryCompleted =>
-    //println(s"Recovery of Topic[$name] completed")
   }
 
   val receiveCommand: Receive = {
-    case a@Message(_, message, _) =>
+    case a@Message(_, _, _) =>
       router.foreach(consumer => consumer ! a)
-    //println(s"Topic [$name]: \'$message\'")
 
     case s@Subscribe(subscriber) =>
       persist(s) {

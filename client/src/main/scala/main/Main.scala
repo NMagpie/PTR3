@@ -1,6 +1,6 @@
 package main
 
-import akka.actor.{ActorRef, ActorSystem, Cancellable, Props}
+import akka.actor.{ActorRef, ActorSystem, Props}
 import client.Overlord
 import client.Overlord.CreateClients
 import com.typesafe.config.ConfigFactory

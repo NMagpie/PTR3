@@ -1,6 +1,6 @@
 package network
 
-import akka.actor.{Actor, ActorRef, Cancellable, Props}
+import akka.actor.{Actor, ActorRef, Cancellable, PoisonPill, Props}
 import akka.io.{IO, Tcp}
 import akka.util.ByteString
 import client.Client.Message
@@ -102,6 +102,7 @@ class TcpClient(remote: InetSocketAddress, listener: ActorRef, id: Int) extends 
           val jsonMessage = parse(data.utf8String)
           val id = (jsonMessage \ "id").extract[Int]
           val ack = ByteString.fromString(Serialization.write(Acknowledgement(id, "ack")))
+
           if (printAck)
             println(s"${self.path.name}[$id] rec: message\n${self.path.name}[$id] sen: ack\n")
           connection.get ! Write(ack)
@@ -116,12 +117,14 @@ class TcpClient(remote: InetSocketAddress, listener: ActorRef, id: Int) extends 
             if (acks.contains(id)) {
               acks(id).cancel()
               acks -= id
+              resendTries -= id
             }
             if (printAck)
               println(s"${self.path.name}[$id] rec: senAck\n${self.path.name}[$id] sen: done\n")
             if (qos2Messages.contains(id))
               processMessage(qos2Messages(id))
             ackType = "done"
+
             qos2Messages -= id
           } else {
             if (printAck)
@@ -141,7 +144,9 @@ class TcpClient(remote: InetSocketAddress, listener: ActorRef, id: Int) extends 
     case "close" =>
       connection.get ! Close
     case _: ConnectionClosed =>
-      listener ! "connection closed"
+      //listener ! "connection closed"
+      for (ack <- acks.values)
+        ack.cancel()
       context.stop(self)
     case _ =>
   }
@@ -182,20 +187,27 @@ class TcpClient(remote: InetSocketAddress, listener: ActorRef, id: Int) extends 
     listener ! Message(id, message, topic)
   }
 
-  var resendTries : Int = 0
+  var resendTries : Map[Int, Int] = Map.empty[Int, Int]
 
   var acks: Map[Int, Cancellable] = Map.empty[Int, Cancellable]
 
   def createResend(message : Acknowledgement) : Unit = {
-    acks += (message.id -> system.scheduler.schedule(750 milliseconds, 750 milliseconds){
+    val id = message.id
+
+    resendTries += (id -> 0)
+
+    acks += (id -> system.scheduler.schedule(5 second, 5 second) {
       if (printAck)
-        println(s"${self.path.name}[${message.id}] res: $message")
+        println(s"${self.path.name}[${id}] res: $message")
+
       connection.get ! Write(ByteString.fromString(Serialization.write(message)))
-      resendTries = resendTries + 1
-      if (resendTries == 25) {
+
+      resendTries = resendTries + (id -> (resendTries(id) + 1))
+
+      if (resendTries(id) == 20) {
         println(s"[${self.path.name}] Number of retries has been exceeded, turning down connection.")
         connection.get ! Close
-        context.stop(self)
+        listener ! PoisonPill
       }
     })
   }

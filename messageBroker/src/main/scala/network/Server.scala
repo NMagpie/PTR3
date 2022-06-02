@@ -35,9 +35,12 @@ class Server extends Actor {
 
     case c@Connected(_, _) =>
       val connection = sender()
+
       val handler = context.actorOf(Props(classOf[MessagesHandler], connection), s"handler-$ids")
+
       handler ! c
       ids = ids + 1
+
       connection ! Register(handler)
   }
 

@@ -36,6 +36,8 @@ class TopicSupervisor extends PersistentActor {
     println("TopicSupervisor is restarting!")
   }
 
+  // Code for testing of restarting of TopicSupervisor
+
   //  override def preStart(): Unit = {
   //    super.preStart()
   //    context.system.scheduler.scheduleOnce(2 minutes) {
@@ -62,14 +64,16 @@ class TopicSupervisor extends PersistentActor {
 
   val receiveCommand: Receive = {
 
-    case c@CreateTopic(message) =>
+    case c @ CreateTopic(message) =>
+
       val name = message.topic
+
       if (!topicPool.contains(name)) {
-        persist(c)(c => {
+        persist(c) (c => {
           addTopic(c.message.topic)
+
           topicPool(name) ! message
         })
-        //println(s"Topic $name was created")
       }
 
   }

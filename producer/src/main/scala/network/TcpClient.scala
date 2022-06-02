@@ -1,6 +1,6 @@
 package network
 
-import akka.actor.{Actor, ActorRef, Cancellable, Props}
+import akka.actor.{Actor, ActorRef, Cancellable, PoisonPill, Props}
 import akka.io.{IO, Tcp}
 import akka.util.ByteString
 import com.typesafe.config.ConfigFactory
@@ -74,7 +74,9 @@ class TcpClient(remote: InetSocketAddress, listener: ActorRef) extends Actor {
       context.become {
         case a @ Message(_, _, _) =>
           val data = ByteString.fromString(Serialization.write(a))
+
           connection.get ! Write(data)
+
           if (printAck)
             println(s"${listener.path.name}[${a.id}] sen: message")
 
@@ -90,28 +92,33 @@ class TcpClient(remote: InetSocketAddress, listener: ActorRef) extends Actor {
           val ack = parse(data.utf8String).extract[Acknowledgement]
 
           if (acks.contains(ack.id)) {
-            resendTries = 0
 
             acks(ack.id).cancel()
+
+            resendTries -= ack.id
 
             QoS match {
               case 1 =>
                 if (printAck)
                   println(s"${listener.path.name}[${ack.id}] rec: ack")
+
                 acks -= ack.id
               case 2 =>
                 ack.ackType match {
                   case "recAck" =>
                     if (printAck)
-                      println(s"${listener.path.name}[${ack.id}] rec: recAck\n${listener.path.name}[${ack.id}] sen: senAcky")
+                      println(s"${listener.path.name}[${ack.id}] rec: recAck\n${listener.path.name}[${ack.id}] sen: senAck")
+
                     val jsonAck = Serialization.write(Acknowledgement(ack.id, "senAck"))
 
-                    createResend(ack)
+                    createResend(Acknowledgement(ack.id, "senAck"))
 
                     connection.get ! Write(ByteString.fromString(jsonAck))
+
                   case "done" =>
                     if (printAck)
                       println(s"${listener.path.name}[${ack.id}] rec: doneAck")
+
                     acks(ack.id).cancel()
 
                     acks -= ack.id
@@ -123,25 +130,34 @@ class TcpClient(remote: InetSocketAddress, listener: ActorRef) extends Actor {
         case "close" =>
           connection.get ! Close
         case _: ConnectionClosed =>
-          listener ! "connection closed"
+          //listener ! "connection closed"
+          for (ack <- acks.values)
+            ack.cancel()
           context.stop(self)
       }
   }
 
-  var resendTries : Int = 0
+  var resendTries : Map[Int, Int] = Map.empty[Int, Int]
 
   var acks: Map[Int, Cancellable] = Map.empty[Int, Cancellable]
 
   def createResend(message: CommunicationMessage) : Unit = {
-    acks += (message.id -> system.scheduler.schedule(750 milliseconds, 750 milliseconds) {
+    val id = message.id
+
+    resendTries += (id -> 0)
+
+    acks += (id -> system.scheduler.schedule(5 second, 5 second) {
       if (printAck)
-        println(s"${listener.path.name}[${message.id}] res: $message")
+        println(s"${listener.path.name}[${id}] res: $message")
+
       connection.get ! Write(ByteString.fromString(Serialization.write(message)))
-      resendTries = resendTries + 1
-      if (resendTries == 25) {
+
+      resendTries = resendTries + (id -> (resendTries(id) + 1))
+
+      if (resendTries(id) == 20) {
         println("Number of retries has been exceeded, turning down connection.")
         connection.get ! Close
-        context.stop(self)
+        listener ! PoisonPill
       }
     })
   }

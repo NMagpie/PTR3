@@ -108,17 +108,22 @@ class MessagesHandler(connection: ActorRef) extends Actor {
                 acks(id).cancel()
                 acks -= id
               }
+
               if (printAck)
                 println(s"${self.path.name}[$id] rec: senAck\n${self.path.name}[$id] sen: done\n")
+
               if (qos2Messages.contains(id))
                 processMessage(qos2Messages(id))
+
               ackType = "done"
               qos2Messages -= id
             } else {
               if (printAck)
                 println(s"${self.path.name}[$id] rec: message\n${self.path.name}[$id] sen: recAck\n")
+
               ackType = "recAck"
               qos2Messages += (id -> data)
+
               if (!acks.contains(id)) {
                 createResend(Acknowledgement(id, ackType))
               }
@@ -131,6 +136,8 @@ class MessagesHandler(connection: ActorRef) extends Actor {
 
     case Connected =>
 
+    case _: ConnectionClosed => endProducer()
+
     case PeerClosed => endProducer()
 
     case ErrorClosed(_) => endProducer()
@@ -140,6 +147,7 @@ class MessagesHandler(connection: ActorRef) extends Actor {
 
     case a@Message(_, _, _) =>
       connection ! Write(ByteString.fromString(Serialization.write(a)))
+
       if (printAck)
         println(s"${self.path.name}[${a.id}] sen: message")
 
@@ -157,28 +165,33 @@ class MessagesHandler(connection: ActorRef) extends Actor {
         val ack = parse(data.utf8String).extract[Acknowledgement]
 
         if (acks.contains(ack.id)) {
-          resendTries = 0
 
           acks(ack.id).cancel()
+
+          resendTries -= ack.id
 
           QoS match {
             case 1 =>
               if (printAck)
                 println(s"${self.path.name}[${ack.id}] rec: ack")
+
               acks -= ack.id
             case 2 =>
               ack.ackType match {
                 case "recAck" =>
                   if (printAck)
                     println(s"${self.path.name}[${ack.id}] rec: recAck\n${self.path.name}[${ack.id}] sen: senAck\n")
+
                   val jsonAck = Serialization.write(Acknowledgement(ack.id, "senAck"))
 
-                  createResend(ack)
+                  createResend(Acknowledgement(ack.id, "senAck"))
 
                   connection ! Write(ByteString.fromString(jsonAck))
+
                 case "done" =>
                   if (printAck)
                     println(s"${self.path.name}[${ack.id}] rec: doneAck")
+
                   acks(ack.id).cancel()
 
                   acks -= ack.id
@@ -189,6 +202,9 @@ class MessagesHandler(connection: ActorRef) extends Actor {
       }
 
     case Connected =>
+
+    case _: ConnectionClosed =>
+      endConsumer(topics)
 
     case Closed =>
       endConsumer(topics)
@@ -205,7 +221,7 @@ class MessagesHandler(connection: ActorRef) extends Actor {
     case ErrorClosed(_) =>
       endConsumer(topics)
 
-    case a@_ => println(a)
+    case a @ _ => println(a)
   }
 
   def selectingTopics: Receive = {
@@ -249,14 +265,17 @@ class MessagesHandler(connection: ActorRef) extends Actor {
       if (topicPool.contains(topic))
         topicPool(topic) ! Unsubscribe(self)
     }
+
     for (ack <- acks.values)
       ack.cancel()
+
     context.stop(self)
   }
 
   def endProducer() : Unit = {
     for (ack <- acks.values)
       ack.cancel()
+
     context.stop(self)
   }
 
@@ -320,20 +339,26 @@ class MessagesHandler(connection: ActorRef) extends Actor {
       context.stop(self)
   }
 
-  var resendTries: Int = 0
+  var resendTries : Map[Int, Int] = Map.empty[Int, Int]
 
   var acks: Map[Int, Cancellable] = Map.empty[Int, Cancellable]
 
   def createResend(message: CommunicationMessage): Unit = {
-    acks += (message.id -> system.scheduler.schedule(750 milliseconds, 750 milliseconds) {
+    val id = message.id
+
+    resendTries += (id -> 0)
+
+    acks += (id -> system.scheduler.schedule(5 second, 5 second) {
       if (printAck)
-        println(s"${self.path.name}[${message.id}] res: $message")
+        println(s"${self.path.name}[${id}] res: $message")
+
       connection ! Write(ByteString.fromString(Serialization.write(message)))
-      resendTries = resendTries + 1
-      if (resendTries == 25) {
+
+      resendTries = resendTries + (id -> (resendTries(id) + 1))
+
+      if (resendTries(id) == 20) {
         println(s"[${self.path.name}] Number of retries has been exceeded, turning down connection.")
         connection ! Close
-        context.stop(self)
       }
     })
   }
