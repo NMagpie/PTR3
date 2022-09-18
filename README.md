@@ -1,6 +1,6 @@
 # PTR Lab 3: Message Broker
 
-## Made by: Sorochin Nichita, FAF-191
+## Made by: Sorochin Nichita
 
 ### Navigation
 
