@@ -1,4 +1,4 @@
-# PTR Lab 3: Message Broker
+# Real Time Programming: Message Broker
 
 ## Made by: Sorochin Nichita
 
