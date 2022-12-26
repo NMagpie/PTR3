@@ -39,7 +39,7 @@ object Main {
       overlord.get ! CreateClients(1)
     } else {
 
-      print("How many producers do you need: ")
+      print("How many consumers do you need: ")
       val number = readInt()
 
       overlord.get ! CreateClients(number)

@@ -54,7 +54,7 @@ Recommended small app also developer using Scala Language + Akka Library. Connec
 the Message Broker, subscribes and receives messages from it and prints them. Pretty
 easy, huh?
 
-Located in the folder `client`.
+Located in the folder `consumer`.
 
 Of course, you can create your own `Consumer`. How it can connect to the Message Broker:
 ### 1. Open TCP Connection with Message Broker (Port by default is `8000`)
@@ -139,7 +139,7 @@ Similar to MQTT, this Message Broker has QoS Technology.
 
 ### QoS Level 0
 
-For this QoS Level client don't have to make any kind of Acknowledgement. Just receive it and that's all.
+For this QoS Level consumer don't have to make any kind of Acknowledgement. Just receive it and that's all.
 
 ![qos0](docs/images/qos0.png)
 
