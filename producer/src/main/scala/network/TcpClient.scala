@@ -61,11 +61,19 @@ class TcpClient(remote: InetSocketAddress, listener: ActorRef) extends Actor {
         while (QoS == -1) {
           print("Quality of Service [0-2]: ")
           QoS = readInt()
-          if (QoS < 0 || QoS > 2)
+          if (QoS < 0 || QoS > 2) {
+            println("Invalid value")
             QoS = -1
+          }
         }
-      else
-        QoS = (new scala.util.Random).nextInt(3)
+      else {
+        QoS = ConfigFactory.load.getInt("qos")
+
+        if (QoS < 0 || QoS > 2) {
+          println("Invalid value, setting up default QoS = 0")
+          QoS = 0
+        }
+      }
 
       connection.get ! Write(ByteString.fromString(Serialization.writePretty(("connectionType"->"Producer")~("QoS"->QoS))))
 

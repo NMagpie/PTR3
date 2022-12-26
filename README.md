@@ -38,6 +38,8 @@ For all the Apps, you can find configuration in `/src/resources/application.conf
 There you can configure network addresses for Apps (like `hostname`, `messagebroker` and address of mongodb server.
 For every value default is `localhost`).
 
+> Another Note: If you are not similar to Scala, make sure that you have installed needed tools for that. If you are using IntelliJ check [this link](https://www.jetbrains.com/help/idea/discover-intellij-idea-for-scala.html#scala_plugin).
+
 # Main Components
 
 - ## Message Broker

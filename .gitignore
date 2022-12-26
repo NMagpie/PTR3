@@ -10,26 +10,16 @@
 *.csv
 *.dat
 
-messageBroker/target/
-messageBroker/logs/
-messageBroker/.bsp
-messageBroker/.idea
-messageBroker/.metals
-messageBroker/.vscode
+**/target/
+**/logs/
+**/.bsp
+**/.idea
+**/.metals
+**/.vscode
 
-client/target/
-client/logs/
-client/.bsp
-client/.idea
-client/.metals
-client/.vscode
-
-producer/target/
-producer/logs/
-producer/.bsp
-producer/.idea
-producer/.metals
-producer/.vscode
+**/project/project/
+**/project/target/
+**/target
 
 .idea
 

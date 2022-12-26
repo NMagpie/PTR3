@@ -168,8 +168,14 @@ class TcpClient(remote: InetSocketAddress, listener: ActorRef, id: Int) extends 
           if (QoS < 0 || QoS > 2)
             QoS = -1
         }
-      else
-        QoS = r.nextInt(3)
+      else {
+        QoS = ConfigFactory.load.getInt("qos")
+
+        if (QoS < 0 || QoS > 2) {
+          println("Invalid value, setting up default QoS = 0")
+          QoS = 0
+        }
+      }
 
       connection ! Write(ByteString.fromString(Serialization.write(("connectionType"->"Consumer") ~ ("QoS"->QoS))))
 
