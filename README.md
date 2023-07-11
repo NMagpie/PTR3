@@ -1,7 +1,5 @@
 # Real Time Programming: Message Broker
 
-## Made by: Sorochin Nichita
-
 ### Navigation
 
 - [Description](#description)
